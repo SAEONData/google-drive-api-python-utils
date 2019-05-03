@@ -8,7 +8,7 @@ from googleapiclient.http import HttpRequest
 from googleapiclient.http import build_http
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-#from apiclient.http import MediaFileUpload
+from apiclient.http import MediaFileUpload
 
 import json
 import requests
@@ -71,8 +71,6 @@ def get_absolute_paths_and_file_listing(local_path):
         #print(path)
         for f in files:
             paths_and_files[path].append(f)
-
-
     return (paths, paths_and_files)
 
 #def main():
@@ -97,7 +95,6 @@ def create_folders(paths, drive_service):
                 if parent[0] == '/':
                     parent = parent[1:len(parent)]
             child = os.path.basename(path)
-            print("creating {} in {}".format(child,parent))
             if parent in path_id_mappings:
                 curr_parent_id = path_id_mappings[parent]
             else:
@@ -112,6 +109,10 @@ def create_folders(paths, drive_service):
             }
             file = drive_service.files().create(body=folder_metadata,
                                             fields='id').execute()
+            if file:
+                logging.info("Successfully created {} in {}".format(child,parent))
+            else:
+                raise Exception("Could not create {} in {}".format(child,parent))
             folder_id = file.get('id')
             folder_name = child
             if parent != "google-drive-root":
@@ -126,11 +127,51 @@ def create_folders(paths, drive_service):
     return path_id_mappings
 
 
+def copy_files(path_and_file_listing, path_id_mappings, local_path, drive_service):
+    try:
+        for path in path_and_file_listing:
+            abs_path = local_path + '/' + path
+            #print(abs_path)
+            parent_id = None         
+            if path in path_id_mappings:
+                parent_id = path_id_mappings[path]
+            if not parent_id:
+                raise Exception("No path id for path{}".format(path))
+            
+            files = path_and_file_listing[path]
+            for file in files:
+                abs_file_path = abs_path + '/' + file
+                if not os.path.exists(abs_file_path):
+                    raise Exception("Local file doesn't exist:{}".format(abs_file_path))
+                file_metadata = {
+                    'name': file,
+                    'parents': [parent_id]}
+
+                media = MediaFileUpload(abs_file_path,
+                                        #mimetype='pdf',
+                                        resumable=True)
+                file_request = drive_service.files().create(body=file_metadata,
+                                                    media_body=media,
+                                                    fields='id').execute()
+                if file_request:
+                    logging.info("Successfully copied {} to {}".format(file,path))
+                else:
+                    raise Exception("Failed to copy {} to {}".format(file, path))
+                
+                
+    except Exception as e:
+        logging.exception("Error while trying to copy files to google drive")
+
 def copy_local_path_recursively(local_path, drive_service):
     path_listing, path_and_file_listing = get_absolute_paths_and_file_listing(local_path)
     #print(path_listing)
-    create_folders(path_listing, drive_service)
-    #print(path_listing)
+    path_id_mappings = create_folders(path_listing, drive_service)
+
+    if not path_id_mappings:
+        logging.error("No path ID mappings returned from folder creation")
+        return
+    local_path = os.path.abspath(os.path.join(local_path, os.pardir))
+    copy_files(path_and_file_listing, path_id_mappings, local_path, drive_service)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

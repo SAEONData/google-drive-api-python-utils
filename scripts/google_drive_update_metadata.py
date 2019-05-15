@@ -65,19 +65,11 @@ if __name__ == '__main__':
     drive_service = google_drive_oath()
     if drive_service:
         
-        file_metadata = {
-            'name': 'panoply_t2',
-            'other_fileType':'file',
-            'textType':'text',
-            'folder_mimeType': 'application/vnd.google-apps.folder',
-            'file_mimeType': 'application/vnd.google-apps.file'
-        }
-
         response = drive_service.files().list(pageSize=1000,q="'{}' in parents and name='README.txt' and trashed=false".format(PARENT_FOLDER_ID),fields="nextPageToken, files(id, name)").execute()
         file_details = response.get('files',[])[0]
         print('Found file: %s (%s)' % (file_details.get('name'), file_details.get('id')))
         file = drive_service.files().get(fileId=file_details.get('id')).execute()
-        metadata = {'description':"[{test:'test2',test2:{test3:[]}}]"}
+        metadata = {'description':"[{test99:'test2',test2:{test3:[]}}]"}
         updated_file = drive_service.files().update(fileId=file_details.get('id'), body=metadata).execute()
 
     else:

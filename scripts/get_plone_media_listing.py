@@ -2,10 +2,12 @@ import argparse
 import json
 import requests
 import time
+import logging
 
 #src_url = 'http://media.dirisa.org/TestFiles/jsonContent?depth=-1'
 src_base_url = 'http://media.dirisa.org/'
-
+MAX_RETRIES=10
+logging.basicConfig(level=logging.ERROR)
 #    response = requests.post(
 #        url=url,
 #        params=data,
@@ -15,16 +17,23 @@ src_base_url = 'http://media.dirisa.org/'
 
 def request_plone_json(creds, src_url):
     src_url = src_url + '/jsonContent?depth=0'
-    response = requests.get(
-        url=src_url,
-        auth=requests.auth.HTTPBasicAuth(
-            creds['src_user'], creds['src_pwd'])
-    )
+    max_tries = MAX_RETRIES
+    success = False
+    response = None
+    while(max_tries > 0 and not success):
+        response = requests.get(
+            url=src_url,
+            auth=requests.auth.HTTPBasicAuth(
+                creds['src_user'], creds['src_pwd'])
+        )
 
-    if response.status_code != 200:
-        # TODO: Implement max-retries limit
-        raise RuntimeError('Request failed with return code: %s' % (
-            response.status_code))
+        if response.status_code != 200:
+            logging.error('Request failed with return code: %s on url path %s' % (
+                response.status_code, src_url))
+            max_tries -=1
+        else:
+            success = True
+
     results = json.loads(response.text)
 
     return results

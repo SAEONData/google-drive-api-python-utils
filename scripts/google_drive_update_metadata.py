@@ -16,7 +16,7 @@ import requests
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata']#'https://www.googleapis.com/auth/drive']#'https://www.googleapis.com/auth/drive.file']
 CREDS_FILE = './credentials.json'
 PARENT_FOLDER_ID = '1PTYWN7_qcI8BlwkGaVmVmI_8PtvN_VA1'#'13rQ1YRz012Ns_7Fh3RgDWdBwPK9YcfXW' # Root google drive folder 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
 
 
 def google_drive_oath():
@@ -65,12 +65,23 @@ if __name__ == '__main__':
     drive_service = google_drive_oath()
     if drive_service:
         
+        # update file metadata
         response = drive_service.files().list(pageSize=1000,q="'{}' in parents and name='README.txt' and trashed=false".format(PARENT_FOLDER_ID),fields="nextPageToken, files(id, name)").execute()
         file_details = response.get('files',[])[0]
         print('Found file: %s (%s)' % (file_details.get('name'), file_details.get('id')))
-        file = drive_service.files().get(fileId=file_details.get('id')).execute()
-        metadata = {'description':"[{test99:'test2',test2:{test3:[]}}]"}
+        metadata = {'description':"[{test99:'test2',test2:{test3:[]}}]",
+                    'properties':{"testfield10":"testvalue10","testfield20":"testvalue20x"}
+                   }
         updated_file = drive_service.files().update(fileId=file_details.get('id'), body=metadata).execute()
+
+        # check file metadata
+        response = drive_service.files().list(
+                 pageSize=1000,
+                 q="'{}' in parents and name='README.txt' and trashed=false".format(PARENT_FOLDER_ID),
+                 fields="nextPageToken, files(id, name, properties)").execute()
+        file_details = response.get('files',[])[0]
+        print("Updated file metadata properties field:\n{}".format(file_details.get('properties')))
+        file = drive_service.files().get(fileId=file_details.get('id'), fields='properties').execute()
 
     else:
         logging.info("Exiting, no google drive service available.")

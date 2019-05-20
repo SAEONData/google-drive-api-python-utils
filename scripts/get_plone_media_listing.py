@@ -3,17 +3,14 @@ import json
 import requests
 import time
 import logging
+import os
+import urllib
+import shutil
 
-#src_url = 'http://media.dirisa.org/TestFiles/jsonContent?depth=-1'
 src_base_url = 'http://media.dirisa.org/'
+src_folders = ['TestFiles']
 MAX_RETRIES=10
 logging.basicConfig(level=logging.ERROR)
-#    response = requests.post(
-#        url=url,
-#        params=data,
-#        auth=requests.auth.HTTPBasicAuth(
-#            creds['ckan_user'], creds['ckan_pwd'])
-#    )
 
 def request_plone_json(creds, src_url):
     src_url = src_url + '/jsonContent?depth=0'
@@ -74,21 +71,53 @@ def get_plone_media_listing(creds):
                 walk_result(url=child['context_path'], creds=creds, child_json=child, folders_dict=folders_dict)
     
     folders_dict = {}
-    walk_result(src_base_url, creds, folders_dict)
+    for folder in src_folders:
+        filler = ''
+        if src_base_url[-1] != '/':
+            filler = '/'
+        url = src_base_url + filler + folder
+        walk_result(url, creds, folders_dict)
 
-    for folder in folders_dict:
-        print("\n{}\n".format(folder))
-        for item in folders_dict[folder]:
-            print("{} ".format(item['context_path']))
+    return folders_dict
 
+def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds):
+    wget_cmd = "cd {destpath} && wget -U 'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)' " \
+               "--post-data '__ac_name={username}&__ac_password={password}' " \
+               "{fileurl}"
+     
+    # first create the destination folders
+    for folder in folder_file_mapping:
+        folder_end = folder.replace(src_base_url,'')
+        path = os.path.abspath(dest_dir + folder_end)
+        try:            
+            if not os.path.exists(path):
+                print('creating folder {}'.format(path))
+                os.makedirs(path)
+        except Exception as e:
+            logging.exception("Could not create directory %s" % (folder))
+
+        files = folder_file_mapping[folder]
+        for file in files:
+            #print(file['type'])
+            url = file['context_path']            
+            #print("copying {} to {}".format(url,path))            
+            file_path = path + '/' + file['title']            
+            downlod_cmd = wget_cmd.format(destpath=path, username=creds['src_user'], password=creds['src_pwd'], fileurl=url)
+            print(downlod_cmd)
+            os.system(downlod_cmd)
+            
  
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--src-user", required=True, help="user name for plone media source")
     parser.add_argument("--src-pwd", required=True, help="admin password for plone media source")
+    parser.add_argument("--dest-dir", required=True, help="destination directory to where media" \
+                                                          "directories and files will be copied")
     args = parser.parse_args()
     creds = {
         'src_user': args.src_user,
         'src_pwd': args.src_pwd,
     }
-    get_plone_media_listing(creds)
+    folder_file_mapping = get_plone_media_listing(creds)
+    copy_plone_media_to_local(folder_file_mapping, args.dest_dir, creds)
+

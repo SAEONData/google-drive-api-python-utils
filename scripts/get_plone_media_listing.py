@@ -83,7 +83,7 @@ def get_plone_media_listing(creds):
 def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds):
     wget_cmd = "cd {destpath} && wget -U 'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)' " \
                "--post-data '__ac_name={username}&__ac_password={password}' " \
-               "{fileurl}"
+               "{fileurl} -O {dest_filename}"
      
     # first create the destination folders
     for folder in folder_file_mapping:
@@ -93,6 +93,9 @@ def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds):
             if not os.path.exists(path):
                 print('creating folder {}'.format(path))
                 os.makedirs(path)
+            if not os.path.exists(path + '/.metadata'):
+                print('creating metadata folder {}'.format(path + '/.metadata'))
+                os.makedirs(path + '/.metadata')
         except Exception as e:
             logging.exception("Could not create directory %s" % (folder))
 
@@ -100,11 +103,19 @@ def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds):
         for file in files:
             #print(file['type'])
             url = file['context_path']            
-            #print("copying {} to {}".format(url,path))            
+            ##print("copying {} to {}".format(url,path))            
             file_path = path + '/' + file['title']            
-            downlod_cmd = wget_cmd.format(destpath=path, username=creds['src_user'], password=creds['src_pwd'], fileurl=url)
-            print(downlod_cmd)
+            downlod_cmd = wget_cmd.format(destpath=path, username=creds['src_user'], password=creds['src_pwd'], 
+                                          fileurl=url, dest_filename=file['title'])
+            #print(downlod_cmd)
             os.system(downlod_cmd)
+            # TODO: may need to rename downloaded files to file['title'] to replace lower case of url
+
+            metadata_path = path + '/.metadata/' + file['title'] + '.json'
+            print("\nwriting metadata to {}\n{}".format(metadata_path, file))
+
+            with open(metadata_path, 'w') as outfile:  
+                json.dump(file, outfile)
             
  
 if __name__ == '__main__':

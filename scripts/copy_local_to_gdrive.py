@@ -1,7 +1,9 @@
 import argparse
+import json
 import logging
 import pickle
-import os.path
+import os
+#import os.path
 import sys
 from googleapiclient.discovery import build
 from googleapiclient.http import HttpRequest
@@ -66,6 +68,8 @@ def get_absolute_paths_and_file_listing(local_path):
     paths_and_files = {}
     for path, dirs, files in os.walk(local_path):
         path = path.replace(base_path,"")
+        #if '.metadata' in path:
+        #    continue
         paths.append(path)
         paths_and_files[path] = []
         #print(path)
@@ -131,6 +135,7 @@ def copy_files(path_and_file_listing, path_id_mappings, local_path, drive_servic
     try:
         for path in path_and_file_listing:
             abs_path = local_path + '/' + path
+            metadata_folder = abs_path + '/.metadata/'
             #print(abs_path)
             parent_id = None         
             if path in path_id_mappings:
@@ -155,6 +160,13 @@ def copy_files(path_and_file_listing, path_id_mappings, local_path, drive_servic
                                                     fields='id').execute()
                 if file_request:
                     logging.info("Successfully copied {} to {}".format(file,path))
+                    # add google id to file in local metadata folder if metadata exists
+                    if os.path.exists(metadata_folder):
+                        goog_id_filename = metadata_folder + file + '.googl_id.txt'
+                        goog_id_file = open(goog_id_filename,'w')
+                        goog_id_file.write(str(file_request))
+                        goog_id_file.close
+                        logging.info("Google id file written to local metadata folder {}".format(goog_id_filename))
                 else:
                     raise Exception("Failed to copy {} to {}".format(file, path))
                 

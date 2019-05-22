@@ -68,8 +68,9 @@ def get_absolute_paths_and_file_listing(local_path):
     paths_and_files = {}
     for path, dirs, files in os.walk(local_path):
         path = path.replace(base_path,"")
-        #if '.metadata' in path:
-        #    continue
+        # skip local metadata folder and contents
+        if '.metadata' in path:
+            continue
         paths.append(path)
         paths_and_files[path] = []
         #print(path)
@@ -146,11 +147,19 @@ def copy_files(path_and_file_listing, path_id_mappings, local_path, drive_servic
             files = path_and_file_listing[path]
             for file in files:
                 abs_file_path = abs_path + '/' + file
+                metadata_filename = metadata_folder + file + '.json'
                 if not os.path.exists(abs_file_path):
                     raise Exception("Local file doesn't exist:{}".format(abs_file_path))
                 file_metadata = {
                     'name': file,
                     'parents': [parent_id]}
+                # add local file metadata to description field if it exists
+                if os.path.exists(metadata_filename):
+                    logging.info("Adding local metadata {}".format(metadata_filename))
+                    with open(metadata_filename) as metadata_file:
+                        local_mdata_json = json.load(metadata_file)
+                    file_metadata['description'] = str(local_mdata_json)
+
 
                 media = MediaFileUpload(abs_file_path,
                                         #mimetype='pdf',

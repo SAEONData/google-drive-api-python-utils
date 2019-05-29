@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import pickle
 import os.path
@@ -71,103 +72,64 @@ def list_folder(google_folder_id):
 
     return results
 
-def walk_folders(google_folder_id, results_dict={}):
+def update_metadata(google_file_id, local_metadata_filename):
+    # Read the metadata
+    with open(local_metadata_filename) as metadata_file:
+        local_mdata_json = json.load(metadata_file)
 
-    # list current folder
+    # apply the metadata
+    update_metadata = {'description':str(local_mdata_json)}
+    #print(metadata)
+    updated_file = drive_service.files().update(
+        fileId=google_file_id, 
+        body=update_metadata).execute()
+    if updated_file:
+        print("applied metadata to {}".format(updated_file['name']))
+        applied_mdata = True
+    else:
+        print("metadata update failed!")
+
+def walk_folders(google_folder_id, local_dir, base_dir=''):
+    
+    parent_folder = drive_service.files().get(
+        fileId=google_folder_id, 
+        fields='name').execute()
+    base_dir = base_dir + parent_folder['name'] + '/'
+    print("Current base directory {}".format(base_dir))
+
+    # list current google drive folder
     current_files = list_folder(google_folder_id)
 
-    # list metadata folder, get json for each file
-    metadata_files = None
+    # find corresponding metadata side car for each file / object, but not folders
+    #     and apply metadata to corresponding google file
+    metadata_dir = base_dir + '.metadata/'
     for curr_file in current_files:
-        if curr_file['name'] == '.metadata':
-            metadata_files = list_folder(curr_file['id'])
-            break
-    # apply metadata json to files in current folder properties field
-    if metadata_files:
-        for md_file in metadata_files:
-            md_fname = md_file['name']
-            applied_mdata = False
-            for curr_file in current_files:
-                if curr_file['name'] == md_fname.replace('.json',''):
-                    # download the corresponding metadata file
-                    request = drive_service.files().get_media(fileId=md_file['id'])
-                    fh = BytesIO()
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    while done is False:
-                        status, done = downloader.next_chunk()
-                        print("Download {}".format(int(status.progress() * 100)))
-                    metadata_json = fh.getvalue().decode('UTF-8')
-
-                    # apply the metadata
-                    update_metadata = {'description':metadata_json}
-                    #print(metadata)
-                    updated_file = drive_service.files().update(
-                        fileId=curr_file['id'], 
-                        body=update_metadata).execute()
-                    if updated_file:
-                        print("applied metadata to {}".format(curr_file['name']))
-                        applied_mdata = True
-                    else:
-                        print("metadata update failed!")
-                    break
-            if not applied_mdata:
-                print('Error! could not find matching file to apply metadata')
-
+        if (curr_file['mimeType'] != 'application/vnd.google-apps.folder'):
+            local_metadata_file = local_dir + metadata_dir + curr_file['name'] + '.json'
+            if os.path.exists(local_metadata_file):
+                update_metadata(curr_file['id'], local_metadata_file)
+                print("Found {}".format(local_metadata_file))
+            else:
+                print("Error, no corresponding metadata file for {}".format(curr_file['name']))
+  
     # if any folders, go into them recursively and repeat above
     for curr_file in current_files:
         if (curr_file['mimeType'] == 'application/vnd.google-apps.folder') and \
                                          (curr_file['name'] != '.metadata'):
-            walk_folders(curr_file['id'])
-        else:
-            return
-
-
-            
-    # else return
-
-
-    #if not folder:
-    #    file = drive_service.files().get(
-    #        fileId=file_details.get('id'), 
-    #        fields='name').execute()
-        
+            print('Going into {}'.format(curr_file['name']))
+            walk_folders(curr_file['id'], local_dir, base_dir)
+    
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--metadata-dir", required=True, help="folder containing .metadata folders")
+    args = parser.parse_args()
+    metadata_folder = args.metadata_dir
 
     drive_service = google_drive_oath()
     if drive_service:
-        walk_folders(PARENT_FOLDER_ID)    
+        walk_folders(PARENT_FOLDER_ID, metadata_folder)    
         # udate file metadata
-
-        """
-        print('getting files ...')
-        response = drive_service.files().list(
-            pageSize=1000,
-            q="'{}' in parents and trashed=false".format(PARENT_FOLDER_ID),
-            fields="nextPageToken, files(id, name)").execute()
-        print(response)
-        file_details = response.get('files',[])
-        for f in file_details:
-            print("got {}".format(f))
-        
-        file_details = response.get('files',[])[0]
-        print('Found file: %s (%s)' % (file_details.get('name'), file_details.get('id')))
-        metadata = {'description':"[{test99:'test2',test2:{test3:[]}}]",
-                    'properties':{"testfield10":"testvalue10","testfield20":"testvalue20x"}
-                   }
-        updated_file = drive_service.files().update(fileId=file_details.get('id'), body=metadata).execute()
-
-        # check file metadata
-        response = drive_service.files().list(
-                 pageSize=1000,
-                 q="'{}' in parents and name='README.txt' and trashed=false".format(PARENT_FOLDER_ID),
-                 fields="nextPageToken, files(id, name, properties)").execute()
-        file_details = response.get('files',[])[0]
-        print("Updated file metadata properties field:\n{}".format(file_details.get('properties')))
-        file = drive_service.files().get(fileId=file_details.get('id'), fields='properties').execute()
-        """
-
     else:
         logging.info("Exiting, no google drive service available.")
 

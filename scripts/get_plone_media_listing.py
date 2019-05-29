@@ -8,7 +8,7 @@ import urllib
 import shutil
 
 src_base_url = 'http://media.dirisa.org/'
-src_folders = ['TestFiles']
+src_folders = ['inventory/archive/spatial/geoss']#['TestFiles']
 MAX_RETRIES=10
 logging.basicConfig(level=logging.ERROR)
 
@@ -103,15 +103,16 @@ def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds):
         for file in files:
             #print(file['type'])
             url = file['context_path']            
-            ##print("copying {} to {}".format(url,path))            
-            file_path = path + '/' + file['title']            
+            ##print("copying {} to {}".format(url,path))
+            file_name = url.split('/')[-1]
+            #file_path = path + '/' + file_name           
             downlod_cmd = wget_cmd.format(destpath=path, username=creds['src_user'], password=creds['src_pwd'], 
-                                          fileurl=url, dest_filename=file['title'])
+                                          fileurl=url, dest_filename=file_name)
             #print(downlod_cmd)
             os.system(downlod_cmd)
             # TODO: may need to rename downloaded files to file['title'] to replace lower case of url
 
-            metadata_path = path + '/.metadata/' + file['title'] + '.json'
+            metadata_path = path + '/.metadata/' + file_name + '.json'
             print("\nwriting metadata to {}\n{}".format(metadata_path, file))
 
             with open(metadata_path, 'w') as outfile:  

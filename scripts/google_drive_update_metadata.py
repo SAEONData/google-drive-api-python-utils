@@ -12,6 +12,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.http import MediaIoBaseDownload 
 from apiclient.http import MediaFileUpload
+import time
 
 import json
 import requests
@@ -19,8 +20,14 @@ import requests
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata',
           'https://www.googleapis.com/auth/drive.readonly']#'https://www.googleapis.com/auth/drive']#'https://www.googleapis.com/auth/drive.file']
 CREDS_FILE = './credentials.json'
-PARENT_FOLDER_ID = '1-3UeRNYRVGrdwItZpUmb22LZvYafA4uE'#'13rQ1YRz012Ns_7Fh3RgDWdBwPK9YcfXW' # Root google drive folder 
+PARENT_FOLDER_ID = '1KSqkVM-3gZD7w7l1wQEY07T6q79kJhWp'#'13rQ1YRz012Ns_7Fh3RgDWdBwPK9YcfXW' # Root google drive folder 
 logging.basicConfig(level=logging.ERROR)
+
+UPDATE_METRICS = {
+    'update_count':0,
+    'successful_updates':0,
+    'failed_updates':0
+}
 
 
 def google_drive_oath():
@@ -72,7 +79,7 @@ def list_folder(google_folder_id):
 
     return results
 
-def update_metadata(google_file_id, local_metadata_filename):
+def get_metadata_update_request(google_file_id, local_metadata_filename):
     # Read the metadata
     with open(local_metadata_filename) as metadata_file:
         local_mdata_json = json.load(metadata_file)
@@ -80,16 +87,13 @@ def update_metadata(google_file_id, local_metadata_filename):
     # apply the metadata
     update_metadata = {'description':str(local_mdata_json)}
     #print(metadata)
-    updated_file = drive_service.files().update(
+    metadata_update_request = drive_service.files().update(
         fileId=google_file_id, 
-        body=update_metadata).execute()
-    if updated_file:
-        print("applied metadata to {}".format(updated_file['name']))
-        applied_mdata = True
-    else:
-        print("metadata update failed!")
+        body=update_metadata)
 
-def walk_folders(google_folder_id, local_dir, base_dir=''):
+    return metadata_update_request
+
+def walk_folders(google_folder_id, local_dir, base_dir='', update_batch_requests=[]):
     
     parent_folder = drive_service.files().get(
         fileId=google_folder_id, 
@@ -100,14 +104,17 @@ def walk_folders(google_folder_id, local_dir, base_dir=''):
     # list current google drive folder
     current_files = list_folder(google_folder_id)
 
-    # find corresponding metadata side car for each file / object, but not folders
-    #     and apply metadata to corresponding google file
+    # find corresponding metadata side car for each file / object, but not folders,
+    #     and, construct metadata update http request, and add to batch list for execution
+    #     later on
     metadata_dir = base_dir + '.metadata/'
     for curr_file in current_files:
         if (curr_file['mimeType'] != 'application/vnd.google-apps.folder'):
             local_metadata_file = local_dir + metadata_dir + curr_file['name'] + '.json'
             if os.path.exists(local_metadata_file):
-                update_metadata(curr_file['id'], local_metadata_file)
+                update_request = get_metadata_update_request(curr_file['id'], local_metadata_file)    
+                update_batch_requests.append(update_request)
+                #update_metadata(curr_file['id'], local_metadata_file)
                 print("Found {}".format(local_metadata_file))
             else:
                 print("Error, no corresponding metadata file for {}".format(curr_file['name']))
@@ -117,7 +124,52 @@ def walk_folders(google_folder_id, local_dir, base_dir=''):
         if (curr_file['mimeType'] == 'application/vnd.google-apps.folder') and \
                                          (curr_file['name'] != '.metadata'):
             print('Going into {}'.format(curr_file['name']))
-            walk_folders(curr_file['id'], local_dir, base_dir)
+            walk_folders(curr_file['id'], local_dir, base_dir, update_batch_requests)
+
+    return update_batch_requests
+
+def execute_batch_request(batch_requests):
+    def callback(request_id, response, exception):
+        if exception:
+            # Handle error
+            UPDATE_METRICS['failed_updates'] = UPDATE_METRICS['failed_updates'] + 1
+            print("Error while attempting batch update")
+            print(exception)
+        else:
+            UPDATE_METRICS['successful_updates'] = UPDATE_METRICS['successful_updates'] + 1
+            print("{} metadata updated. id={}".format(response['name'],response['id']))#.get('id')))
+
+    #batch = drive_service.new_batch_http_request(callback=callback)
+    count = 0
+    # split batch if larger than 100 entries
+    batches = []
+    current_batch = []
+    for batch_request in batch_requests:
+        current_batch.append(batch_request)
+        count += 1
+        if count == 100:
+            batches.append(current_batch)
+            current_batch = []
+    batches.append(current_batch)
+    #total_len = 0
+    #for batch in batches:
+    #    total_len += len(batch)
+
+    responses = []
+    for batch_requests in batches:
+        batch = drive_service.new_batch_http_request(callback=callback)
+        for request in batch_requests:
+            batch.add(request)
+        response = batch.execute()
+        responses.append(response)
+        # sleep between requests to avoid 403: User Rate Limit Exceeded error
+        time.sleep(2)
+
+    return responses
+    #print("total length:{}".format(total_len))
+
+        
+
     
 
 if __name__ == '__main__':
@@ -128,7 +180,13 @@ if __name__ == '__main__':
 
     drive_service = google_drive_oath()
     if drive_service:
-        walk_folders(PARENT_FOLDER_ID, metadata_folder)    
+        update_batch_requests = walk_folders(PARENT_FOLDER_ID, metadata_folder)
+        #for update_request in update_batch_requests:
+        #    print(update_request)
+        #print(len(update_batch_requests))
+        UPDATE_METRICS['update_count'] = len(update_batch_requests)
+        execute_batch_request(update_batch_requests)
+        print("\nUPDATE METRICS\n{}".format(UPDATE_METRICS))
         # udate file metadata
     else:
         logging.info("Exiting, no google drive service available.")

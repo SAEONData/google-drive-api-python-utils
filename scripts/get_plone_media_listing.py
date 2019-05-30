@@ -8,7 +8,7 @@ import urllib
 import shutil
 
 src_base_url = 'http://media.dirisa.org/'
-src_folders = ['inventory/archive/spatial/geoss']#['TestFiles']
+src_folders = ['TestFiles']#['inventory/archive/spatial']#
 MAX_RETRIES=10
 logging.basicConfig(level=logging.ERROR)
 
@@ -80,12 +80,14 @@ def get_plone_media_listing(creds):
 
     return folders_dict
 
-def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds):
+def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds, metadata_output_file):
     wget_cmd = "cd {destpath} && wget -U 'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)' " \
                "--post-data '__ac_name={username}&__ac_password={password}' " \
                "{fileurl} -O {dest_filename}"
+    md5_cmd = "bash generate_hash_file.sh {inputfile} {outputdir}"
      
     # first create the destination folders
+    all_metadata = {}
     for folder in folder_file_mapping:
         folder_end = folder.replace(src_base_url,'')
         path = os.path.abspath(dest_dir + folder_end)
@@ -93,12 +95,13 @@ def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds):
             if not os.path.exists(path):
                 print('creating folder {}'.format(path))
                 os.makedirs(path)
-            if not os.path.exists(path + '/.metadata'):
-                print('creating metadata folder {}'.format(path + '/.metadata'))
-                os.makedirs(path + '/.metadata')
+            if not os.path.exists(path + '/.md5sums'):
+                print('creating metadata folder {}'.format(path + '/.md5sums'))
+                os.makedirs(path + '/.md5sums')
         except Exception as e:
             logging.exception("Could not create directory %s" % (folder))
 
+        all_metadata[folder_end] = []
         files = folder_file_mapping[folder]
         for file in files:
             #print(file['type'])
@@ -110,13 +113,23 @@ def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds):
                                           fileurl=url, dest_filename=file_name)
             #print(downlod_cmd)
             os.system(downlod_cmd)
-            # TODO: may need to rename downloaded files to file['title'] to replace lower case of url
+            file_to_hash = path + '/' + file_name
+            mdf5sum_path = path + '/.md5sums/'
+            md5_hash_cmd = md5_cmd.format(inputfile=file_to_hash, outputdir=mdf5sum_path)
+            print(md5_hash_cmd)
+            os.system(md5_hash_cmd)
+            #metadata_path = path + '/.metadata/' + file_name + '.json'
+            #print("\nwriting metadata to {}\n{}".format(metadata_path, file))
 
-            metadata_path = path + '/.metadata/' + file_name + '.json'
-            print("\nwriting metadata to {}\n{}".format(metadata_path, file))
+            #with open(metadata_path, 'w') as outfile:  
+            #    json.dump(file, outfile)
+            #print('-- path --\n{}'.format(folder_end))
+            #print('-- metadata --\n{}\n'.format(file))
+            all_metadata[folder_end].append(file)
+    #print(all_metadata)
+    with open(metadata_output_file,'w') as outfile:
+        json.dump(all_metadata, outfile)
 
-            with open(metadata_path, 'w') as outfile:  
-                json.dump(file, outfile)
             
  
 if __name__ == '__main__':
@@ -125,11 +138,13 @@ if __name__ == '__main__':
     parser.add_argument("--src-pwd", required=True, help="admin password for plone media source")
     parser.add_argument("--dest-dir", required=True, help="destination directory to where media" \
                                                           "directories and files will be copied")
+    parser.add_argument("--metadata-output-file", required=True, help="file to output all plone" \
+                                                                         "mediametadata json to")
     args = parser.parse_args()
     creds = {
         'src_user': args.src_user,
         'src_pwd': args.src_pwd,
     }
     folder_file_mapping = get_plone_media_listing(creds)
-    copy_plone_media_to_local(folder_file_mapping, args.dest_dir, creds)
+    copy_plone_media_to_local(folder_file_mapping, args.dest_dir, creds, args.metadata_output_file)
 

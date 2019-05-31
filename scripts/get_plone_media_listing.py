@@ -116,7 +116,7 @@ def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds, metadata_out
             mdf5sum_path = path + '/.md5sums/'
             md5_hash_cmd = md5_cmd.format(inputfile=file_to_hash, outputdir=mdf5sum_path)
             print(md5_hash_cmd)
-            md5sum_str = os.popen(md5_hash_cmd).read()
+            md5sum_str = os.popen(md5_hash_cmd).read().replace('\n','')
             print("{} MD5SUM {}".format(file_name, md5sum_str))
             file['md5sum'] = md5sum_str
             all_metadata[folder_end].append(file)

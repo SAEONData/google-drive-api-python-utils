@@ -20,7 +20,7 @@ import requests
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata',
           'https://www.googleapis.com/auth/drive.readonly']#'https://www.googleapis.com/auth/drive']#'https://www.googleapis.com/auth/drive.file']
 CREDS_FILE = './credentials.json'
-PARENT_FOLDER_ID = '1KSqkVM-3gZD7w7l1wQEY07T6q79kJhWp'#'13rQ1YRz012Ns_7Fh3RgDWdBwPK9YcfXW' # Root google drive folder 
+PARENT_FOLDER_ID = '1kIHacMlBtpyF42rGyvML43dmXE02T_h7'#'13rQ1YRz012Ns_7Fh3RgDWdBwPK9YcfXW' # Root google drive folder 
 logging.basicConfig(level=logging.ERROR)
 
 UPDATE_METRICS = {
@@ -77,15 +77,26 @@ def list_folder(google_folder_id):
             fields="nextPageToken, files(id, name, mimeType)").execute()
     results = response.get('files',[])
 
-    return results
+    # list the .md5sum folder if it exists
+    md5_sum_folder_id = None
+    for res in results:
+        #print(res['name'])
+        if res['name'] == '.md5sums':
+            md5_sum_folder_id = res['id']
+            #print("Found {}".format(res['name']))
+    md5_results = []
+    if md5_sum_folder_id:
+        response = drive_service.files().list(
+            pageSize=1000,
+            q="'{}' in parents and trashed=false".format(md5_sum_folder_id),
+            fields="nextPageToken, files(id, name, mimeType)").execute()
+        md5_results = response.get('files',[])
+        #print("MD5s {}".format(md5_results))
+    return (results, md5_results)
 
-def get_metadata_update_request(google_file_id, local_metadata_filename):
-    # Read the metadata
-    with open(local_metadata_filename) as metadata_file:
-        local_mdata_json = json.load(metadata_file)
-
+def get_metadata_update_request(google_file_id, metadata_record):
     # apply the metadata
-    update_metadata = {'description':str(local_mdata_json)}
+    update_metadata = {'description':str(metadata_record)}
     #print(metadata)
     metadata_update_request = drive_service.files().update(
         fileId=google_file_id, 
@@ -93,7 +104,7 @@ def get_metadata_update_request(google_file_id, local_metadata_filename):
 
     return metadata_update_request
 
-def walk_folders(google_folder_id, local_dir, base_dir='', update_batch_requests=[]):
+def walk_folders(google_folder_id, all_metadata_json, base_dir='', update_batch_requests=[]):
     
     parent_folder = drive_service.files().get(
         fileId=google_folder_id, 
@@ -101,30 +112,67 @@ def walk_folders(google_folder_id, local_dir, base_dir='', update_batch_requests
     base_dir = base_dir + parent_folder['name'] + '/'
     print("Current base directory {}".format(base_dir))
 
-    # list current google drive folder
-    current_files = list_folder(google_folder_id)
+    # list current google drive folder and md5sum folder
+    (current_files,curr_md5sum_files) = list_folder(google_folder_id)
 
     # find corresponding metadata side car for each file / object, but not folders,
     #     and, construct metadata update http request, and add to batch list for execution
     #     later on
-    metadata_dir = base_dir + '.metadata/'
+    #metadata_dir = base_dir + '.metadata/'
     for curr_file in current_files:
         if (curr_file['mimeType'] != 'application/vnd.google-apps.folder'):
-            local_metadata_file = local_dir + metadata_dir + curr_file['name'] + '.json'
-            if os.path.exists(local_metadata_file):
-                update_request = get_metadata_update_request(curr_file['id'], local_metadata_file)    
-                update_batch_requests.append(update_request)
-                #update_metadata(curr_file['id'], local_metadata_file)
-                print("Found {}".format(local_metadata_file))
+
+
+            #local_metadata_file = local_dir + metadata_dir + curr_file['name'] + '.json'
+            curr_fname = curr_file['name']
+            hits = 0
+            md5_match = None
+            for md5_sum_file in curr_md5sum_files:
+                md5_hash = md5_sum_file['name'].split('.')[-1]
+                if md5_sum_file['name'].replace('.' + md5_hash,'') == curr_fname:
+                    md5_match = md5_hash#md5_sum_file['name']
+                    hits += 1
+            if md5_match and hits == 1:
+                print("Found unique md5sum match for {}".format(curr_fname))
             else:
-                print("Error, no corresponding metadata file for {}".format(curr_file['name']))
+                print("Error! No unique md5sum match for {}".format(curr_fname))
+            if (hits > 1):
+                print("Error! Duplicate md5sum for {}".format(curr_fname))
+           
+            # get metadata from all metadata for this file using path and corresponding hash
+            #print('getting mdata for {} and {}'.format(base_dir, md5_match))
+            update_request = None
+            base_dir_sub = base_dir[0:len(base_dir) - 1]
+            if base_dir_sub in all_metadata_json.keys():
+                metadata_record = None
+                for record in all_metadata_json[base_dir_sub]:
+                    curr_hash = record['md5sum']
+                    #print("ebiscuit {} {}".format(curr_hash, md5_match))
+                    if curr_hash == md5_match:
+                        metadata_record = record
+                        break
+                if metadata_record:
+                    print("Constructing metadata update request for {}".format(curr_file['name']))
+                    update_request = get_metadata_update_request(curr_file['id'], metadata_record)
+                    pass
+                else:
+                    print("Error! no metadata record found for {}".format(curr_file['name']))
+            else:
+                print("Error! no metadata records for folder {}".format(base_dir))
+                print(all_metadata_json.keys())
+
+            if update_request:
+                print("Adding update request to batch")
+                update_batch_requests.append(update_request)
+            else:
+                print("Error! Update request not created.")
   
     # if any folders, go into them recursively and repeat above
     for curr_file in current_files:
         if (curr_file['mimeType'] == 'application/vnd.google-apps.folder') and \
-                                         (curr_file['name'] != '.metadata'):
+                                         (curr_file['name'] != '.md5sums'):
             print('Going into {}'.format(curr_file['name']))
-            walk_folders(curr_file['id'], local_dir, base_dir, update_batch_requests)
+            walk_folders(curr_file['id'], all_metadata_json, base_dir, update_batch_requests)
 
     return update_batch_requests
 
@@ -168,19 +216,18 @@ def execute_batch_request(batch_requests):
     return responses
     #print("total length:{}".format(total_len))
 
-        
-
-    
+ 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--metadata-dir", required=True, help="folder containing .metadata folders")
+    parser.add_argument("--all-metadata-file", required=True, help="file containing metadata in json format")
     args = parser.parse_args()
-    metadata_folder = args.metadata_dir
+    with open(args.all_metadata_file) as metadata_file:
+        all_metadata_json = json.load(metadata_file)
 
-    drive_service = google_drive_oath()
+    drive_service =google_drive_oath()
     if drive_service:
-        update_batch_requests = walk_folders(PARENT_FOLDER_ID, metadata_folder)
+        update_batch_requests = walk_folders(PARENT_FOLDER_ID, all_metadata_json)
         #for update_request in update_batch_requests:
         #    print(update_request)
         #print(len(update_batch_requests))

@@ -111,27 +111,18 @@ def copy_plone_media_to_local(folder_file_mapping, dest_dir, creds, metadata_out
             #file_path = path + '/' + file_name           
             downlod_cmd = wget_cmd.format(destpath=path, username=creds['src_user'], password=creds['src_pwd'], 
                                           fileurl=url, dest_filename=file_name)
-            #print(downlod_cmd)
             os.system(downlod_cmd)
             file_to_hash = path + '/' + file_name
             mdf5sum_path = path + '/.md5sums/'
             md5_hash_cmd = md5_cmd.format(inputfile=file_to_hash, outputdir=mdf5sum_path)
             print(md5_hash_cmd)
-            os.system(md5_hash_cmd)
-            #metadata_path = path + '/.metadata/' + file_name + '.json'
-            #print("\nwriting metadata to {}\n{}".format(metadata_path, file))
-
-            #with open(metadata_path, 'w') as outfile:  
-            #    json.dump(file, outfile)
-            #print('-- path --\n{}'.format(folder_end))
-            #print('-- metadata --\n{}\n'.format(file))
+            md5sum_str = os.popen(md5_hash_cmd).read()
+            print("{} MD5SUM {}".format(file_name, md5sum_str))
+            file['md5sum'] = md5sum_str
             all_metadata[folder_end].append(file)
-    #print(all_metadata)
     with open(metadata_output_file,'w') as outfile:
         json.dump(all_metadata, outfile)
 
-            
- 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--src-user", required=True, help="user name for plone media source")

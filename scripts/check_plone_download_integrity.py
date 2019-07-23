@@ -56,7 +56,7 @@ def download_and_compare_checksum(all_metadata_json, creds, dest_dir):
                 CHECK_METRICS['checksum_mismatches'] = CHECK_METRICS['checksum_mismatches'] + 1
             #print(record.keys())
         #brk
-        break
+        #break
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

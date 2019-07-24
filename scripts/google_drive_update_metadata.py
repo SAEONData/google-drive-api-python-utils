@@ -20,7 +20,7 @@ import requests
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata',
           'https://www.googleapis.com/auth/drive.readonly']#'https://www.googleapis.com/auth/drive']#'https://www.googleapis.com/auth/drive.file']
 CREDS_FILE = './credentials.json'
-PARENT_FOLDER_ID = '1kIHacMlBtpyF42rGyvML43dmXE02T_h7'#'13rQ1YRz012Ns_7Fh3RgDWdBwPK9YcfXW' # Root google drive folder 
+PARENT_FOLDER_ID = '1DoTqbQdTOWHVLlbinq6eqdpx95o2QfIQ'#'13rQ1YRz012Ns_7Fh3RgDWdBwPK9YcfXW' # Root google drive folder 
 logging.basicConfig(level=logging.ERROR)
 
 UPDATE_METRICS = {
@@ -166,6 +166,7 @@ def walk_folders(google_folder_id, all_metadata_json, base_dir='', update_batch_
                 update_batch_requests.append(update_request)
             else:
                 print("Error! Update request not created.")
+                brk
   
     # if any folders, go into them recursively and repeat above
     for curr_file in current_files:
@@ -181,7 +182,7 @@ def execute_batch_request(batch_requests):
         if exception:
             # Handle error
             UPDATE_METRICS['failed_updates'] = UPDATE_METRICS['failed_updates'] + 1
-            print("Error while attempting batch update")
+            print("Error while attempting batch update for {}. id={}".format(response['name'],response['id']))
             print(exception)
         else:
             UPDATE_METRICS['successful_updates'] = UPDATE_METRICS['successful_updates'] + 1
@@ -195,9 +196,10 @@ def execute_batch_request(batch_requests):
     for batch_request in batch_requests:
         current_batch.append(batch_request)
         count += 1
-        if count == 100:
+        if count == 10:
             batches.append(current_batch)
             current_batch = []
+            count = 0
     batches.append(current_batch)
     #total_len = 0
     #for batch in batches:
@@ -208,10 +210,11 @@ def execute_batch_request(batch_requests):
         batch = drive_service.new_batch_http_request(callback=callback)
         for request in batch_requests:
             batch.add(request)
+        
         response = batch.execute()
         responses.append(response)
         # sleep between requests to avoid 403: User Rate Limit Exceeded error
-        time.sleep(2)
+        time.sleep(10)
 
     return responses
     #print("total length:{}".format(total_len))
@@ -224,6 +227,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     with open(args.all_metadata_file) as metadata_file:
         all_metadata_json = json.load(metadata_file)
+
+  
 
     drive_service =google_drive_oath()
     if drive_service:

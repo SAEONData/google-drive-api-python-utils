@@ -166,7 +166,6 @@ def walk_folders(google_folder_id, all_metadata_json, base_dir='', update_batch_
                 update_batch_requests.append(update_request)
             else:
                 print("Error! Update request not created.")
-                brk
   
     # if any folders, go into them recursively and repeat above
     for curr_file in current_files:
@@ -228,7 +227,9 @@ if __name__ == '__main__':
     with open(args.all_metadata_file) as metadata_file:
         all_metadata_json = json.load(metadata_file)
 
-  
+    for k in all_metadata_json.keys():
+        new_key_name = (k.replace('inventory/archive/','__ARCHIVE/'))#'__ARCHIVE'))
+        all_metadata_json[new_key_name] = all_metadata_json.pop(k) 
 
     drive_service =google_drive_oath()
     if drive_service:

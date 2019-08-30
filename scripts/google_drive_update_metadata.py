@@ -71,13 +71,33 @@ def google_drive_oath():
     return service
 
 def list_folder(google_folder_id):
-    response = drive_service.files().list(
-            pageSize=1000,
-            q="'{}' in parents and trashed=false".format(google_folder_id),
-            fields="nextPageToken, files(id, name, mimeType)").execute()
-    results = response.get('files',[])
+    def googleapi_list_folder(google_folder_id):
+        result = []
+        page_token = None
+        while True:
+            try:
+                param = {}
+                if page_token:
+                  param['pageToken'] = page_token
+                #else:
+                param['pageSize'] = 1000
+                param['q'] = "'{}' in parents and trashed=false".format(google_folder_id)
+                param['fields'] = "nextPageToken, files(id, name, mimeType)"
 
-    # list the .md5sum folder if it exists
+                files = drive_service.files().list(**param).execute()        
+                result.extend(files.get('files',[]))#['items'])
+                page_token = files.get('nextPageToken')
+                if not page_token:
+                  break
+                else:
+                    print("Page token!!!!")
+            except errors.HttpError, error:
+                print("Error! couldn't list google folder. {}".format(error))
+                break
+        return result
+
+    results = googleapi_list_folder(google_folder_id)
+
     md5_sum_folder_id = None
     for res in results:
         #print(res['name'])
@@ -86,12 +106,7 @@ def list_folder(google_folder_id):
             #print("Found {}".format(res['name']))
     md5_results = []
     if md5_sum_folder_id:
-        response = drive_service.files().list(
-            pageSize=1000,
-            q="'{}' in parents and trashed=false".format(md5_sum_folder_id),
-            fields="nextPageToken, files(id, name, mimeType)").execute()
-        md5_results = response.get('files',[])
-        #print("MD5s {}".format(md5_results))
+        md5_results = googleapi_list_folder(md5_sum_folder_id)
     return (results, md5_results)
 
 def get_metadata_update_request(google_file_id, metadata_record):
